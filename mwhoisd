@@ -5,10 +5,11 @@ import socket, os, re
 from time import strftime
 from netaddr import IPAddress, IPNetwork 
 
-LISTEN_ADDRESS	=	"0.0.0.0"
-LISTEN_PORT		=	43
+LISTEN_ADDRESS	=	"127.0.0.1"
+LISTEN_PORT		=	8043
 MAX_QUERY_SIZE	=	128
-LOGFILE			=	"/var/log/mwhois.log"
+# LOGFILE			=	"/var/log/mwhois.log"
+LOGFILE			=	""
 
 n				=	"\r\n"
 os.system("mkdir -p db/ipv4")
@@ -28,7 +29,8 @@ def sanitizeQuery(qr):
 	qr = qr.replace("..", ".")
 	qr = qr.replace("/", "")
 	qr = qr.replace("\\", "")
-	qr = qr.replace(n, "")
+	qr = qr.replace("\r", "")
+	qr = qr.replace("\n", "")
 	return qr
 
 # Check if the input is a valid IPv4 Address
