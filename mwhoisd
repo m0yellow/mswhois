@@ -1,19 +1,18 @@
 #!/usr/bin/python
 
 
-import socket, os, re
+import socket, re, sys, ipaddress
 from time import strftime
 from netaddr import IPAddress, IPNetwork 
+from csv import DictReader
+import sys
 
 LISTEN_ADDRESS	=	"127.0.0.1"
-LISTEN_PORT		=	8043
+LISTEN_PORT	=	8043
 MAX_QUERY_SIZE	=	128
-# LOGFILE			=	"/var/log/mwhois.log"
-LOGFILE			=	""
+n               =       "\r\n"
 
-n				=	"\r\n"
-os.system("mkdir -p db/ipv4")
-os.system("mkdir -p db/domains")
+
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
@@ -25,6 +24,7 @@ s.listen(1)
 
 #	Sanitize the query received
 def sanitizeQuery(qr):
+	#qr = re.search('^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])(\.(?!$)|$)){4}$',str(qr))
 	qr = qr.lower()
 	qr = qr.replace("..", ".")
 	qr = qr.replace("/", "")
@@ -70,73 +70,74 @@ def isDomain(qr):
 def isIPinCIDR(ip, network):
 	return IPAddress(ip) in IPNetwork(network)
 
+# load data from csv
+def loadCSV(ipdb):
+    csvfile = DictReader(open('../ipdb.csv', 'r'))
+    for entry in csvfile:
+       		ipdb[entry["network"]] = entry
+
+def checkipdb(ipdb,query):
+    response = ""
+    for key,value in ipdb.items():
+        try:
+            dbresult = ipaddress.IPv4Network(value["network"])
+        except ipaddress.AddressValueError:
+            break
+        if ( query == dbresult ):
+            # print("exact match.",dbresult)
+            return dbresult
+            break
+        if ( response == "" ):
+            if query.subnet_of(dbresult):
+                # print("first match",dbresult)
+                response = dbresult
+        else:
+            if query.subnet_of(dbresult):
+                # print("further match",dbresult)
+                response = dbresult 
+    return response
+	 
+ipdb = {}
+loadCSV(ipdb)
+
 while True:
-	con, adr = s.accept()
-	log = "[" + strftime("%d/%m/%Y %H:%M:%S") + "] " + adr[0] + " - "
+	#log = "[" + strftime("%d/%m/%Y %H:%M:%S") + "] " + adr[0] + " - "
+
 	while True:
+		con, adr = s.accept()
 		query = con.recv(MAX_QUERY_SIZE)
 		if not query:
 			break
-		log = log + query.replace("\r\n", "").replace("\n", "") + " - "
-		query = sanitizeQuery(query)	
-
-		rsp = 		"# +-----------------------------------+" + n
-		rsp = rsp + "# |             DaKnObNET             |" + n
-		rsp = rsp + "# +-----------------------------------+" + n
-		rsp = rsp + "# |  This query was served by mwhois  |" + n
-		rsp = rsp + "# +-----------------------------------+" + n
+		query = sanitizeQuery(query.decode())	
+	
+		rsp = ""	
+		rsp = rsp + "# +--------------------------------------+" + n
+		rsp = rsp + "# |  This query was served by m(s)whois  |" + n
+		rsp = rsp + "# +--------------------------------------+" + n
 		rsp = rsp + n
 
-		if(isIP(query)):
-			# WHOIS IPv4
-			log = log + "IPv4"
-			ipdb = os.listdir("db/ipv4/")
-			for ipe in ipdb:
-				ipe = ipe.replace("-", "/")
-				found = False
-				if(isIPinCIDR(query, ipe)):
-					dd = open("db/ipv4/" + ipe.replace("/", "-"), "r")
-					rsp = rsp + dd.read()
-					dd.close()
-					found = True
-					log = log + n
-					break
-			if(found == False):
-				rsp = rsp + n
-				rsp = rsp + "# IP Address was not found in the whois database" + n
-				log = log + " (Not found)" + n
-
-		elif(isDomain(query)):
-			# WHOIS Domain
-			log = log + "Domain" + n
-			
-			domaindb = os.listdir("db/domains/")
-			for domain in domaindb:
-				found = False
-				if(query == domain):
-					dd = open("db/domains/" + domain, "r")
-					rsp = rsp + dd.read()
-					dd.close()
-					found = True
-					log = log + n
-					break
-			if(found == False):
-				rsp = rsp + n
-				rsp = rsp + "# Domain name was not found in the whois database" + n
-				log = log + " (Not found)" + n
+		try:
+			query = ipaddress.IPv4Network(query)
+		except ipaddress.AddressValueError:
+			break
+		# query = ipaddress.IPv4Network(u'10.10.10.10')	
+		result = checkipdb(ipdb,query)
+		if ( result == "" ):
+			rsp = rsp + "nothing found."
 		else:
-			# Unrecognized	
-			log = log + "Unrecognized" + n
-			rsp = rsp + n
-			rsp = rsp + "# Error. Unknown query type. Query is not IPv4 or Domain " + n
-		con.send(rsp)
+			if ( result.num_addresses > 1 ):
+				rsp = rsp + "resource:\t" + str(result[1]) + " - " + str(result[-1]) + n
+			else:
+				rsp = rsp + "resource:\t" + str(result) + n
+			rsp = rsp + "usage:\t\t" + ipdb[str(result)]['usage'] + n
+			rsp = rsp + "description:\t" + ipdb[str(result)]['description'] + n
+			rsp = rsp + "customer_name:\t" + ipdb[str(result)]['customer_name'] + n
+			rsp = rsp + "created:\t" + ipdb[str(result)]['createdat'] + n
+			rsp = rsp + "created by:\t" + ipdb[str(result)]['createdby'] + n
+			rsp = rsp + "changed:\t" + ipdb[str(result)]['changedat'] + n
+			rsp = rsp + "changed by:\t" + ipdb[str(result)]['changedby'] + n
+			# print(ipdb[str(result)])
+
+		rsp = rsp + n
+		con.sendall(rsp.encode('utf-8'))
 		con.close()
-		if(LOGFILE!=""):
-			# Save to logs
-			try:
-				d = open(LOGFILE, "a+")
-				d.write(log)
-				d.close()
-			except:
-				print("FAILED TO SAVE TO LOGFILE!")
-		break
