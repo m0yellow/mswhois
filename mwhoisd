@@ -25,9 +25,9 @@ s.listen(1)
 #	Sanitize the query received
 def sanitizeQuery(qr):
 	#qr = re.search('^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])(\.(?!$)|$)){4}$',str(qr))
-	qr = qr.lower()
-	qr = qr.replace("..", ".")
-	qr = qr.replace("/", "")
+	# qr = qr.lower()
+	# qr = qr.replace("..", ".")
+	# qr = qr.replace("/", "")
 	qr = qr.replace("\\", "")
 	qr = qr.replace("\r", "")
 	qr = qr.replace("\n", "")
@@ -74,7 +74,7 @@ def isIPinCIDR(ip, network):
 def loadCSV(ipdb):
     csvfile = DictReader(open('../ipdb.csv', 'r'))
     for entry in csvfile:
-       		ipdb[entry["network"]] = entry
+        ipdb[entry["network"]] = entry
 
 def checkipdb(ipdb,query):
     response = ""
@@ -109,6 +109,7 @@ while True:
 		if not query:
 			break
 		query = sanitizeQuery(query.decode())	
+		# query = query.decode()
 	
 		rsp = ""	
 		rsp = rsp + "# +--------------------------------------+" + n
@@ -132,8 +133,8 @@ while True:
 			rsp = rsp + "usage:\t\t" + ipdb[str(result)]['usage'] + n
 			rsp = rsp + "description:\t" + ipdb[str(result)]['description'] + n
 			rsp = rsp + "customer_name:\t" + ipdb[str(result)]['customer_name'] + n
-			rsp = rsp + "created:\t" + ipdb[str(result)]['createdat'] + n
-			rsp = rsp + "created by:\t" + ipdb[str(result)]['createdby'] + n
+#			rsp = rsp + "created:\t" + ipdb[str(result)]['createdat'] + n
+#			rsp = rsp + "created by:\t" + ipdb[str(result)]['createdby'] + n
 			rsp = rsp + "changed:\t" + ipdb[str(result)]['changedat'] + n
 			rsp = rsp + "changed by:\t" + ipdb[str(result)]['changedby'] + n
 			# print(ipdb[str(result)])
