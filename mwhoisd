@@ -81,7 +81,7 @@ def checkipdb(ipdb,query):
     for key,value in ipdb.items():
         try:
             dbresult = ipaddress.IPv4Network(value["network"])
-        except ipaddress.AddressValueError:
+        except:
             break
         if ( query == dbresult ):
             # print("exact match.",dbresult)
@@ -117,11 +117,11 @@ while True:
 		rsp = rsp + n
 
 		try:
-			query = ipaddress.IPv4Network(query)
-		except ipaddress.AddressValueError:
-			break
-		# query = ipaddress.IPv4Network(u'10.10.10.10')	
-		result = checkipdb(ipdb,query)
+			query = ipaddress.ip_network(query)
+			# query = ipaddress.IPv4Network(u'10.10.10.10')	
+			result = checkipdb(ipdb,query)
+		except:
+			result = ""
 		if ( result == "" ):
 			rsp = rsp + "nothing found."
 		else:
