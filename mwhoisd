@@ -4,7 +4,7 @@ import socket, re, sys, ipaddress
 from time import strftime
 from csv import DictReader
 
-LISTEN_ADDRESS	=	"127.0.0.1"
+LISTEN_ADDRESS	=	"0.0.0.0"
 LISTEN_PORT	=	8043
 MAX_QUERY_SIZE	=	128
 
@@ -68,12 +68,13 @@ s.listen(1)
 # there should be a proper closing of the socket when receiving SIG...
 while True:
 	con, adr = s.accept()
-	print( "[" + strftime("%d/%m/%Y %H:%M:%S") + "] " + adr[0] + " - ")
+	print( "[" + strftime("%d/%m/%Y %H:%M:%S") + "] " + adr[0] + " - ", end = '')
 	query = con.recv(MAX_QUERY_SIZE)
 	if not query:
 		break
 	# we got so far, then we remove anything which isn't a symbol of an IP
-	query = sanitizeQuery(query.decode())	
+	query = sanitizeQuery(query.decode())
+	print(query)
 
 	# server header, got the idea from the project I got the idea from
 	rsp = ""	
