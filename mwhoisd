@@ -1,142 +1,120 @@
 #!/usr/bin/python
 
-
-import socket, os, re
+import socket, re, sys, ipaddress
 from time import strftime
-from netaddr import IPAddress, IPNetwork 
+from csv import DictReader
 
-LISTEN_ADDRESS	=	"127.0.0.1"
-LISTEN_PORT		=	8043
+LISTEN_ADDRESS	=	"0.0.0.0"
+LISTEN_PORT	=	8043
 MAX_QUERY_SIZE	=	128
-# LOGFILE			=	"/var/log/mwhois.log"
-LOGFILE			=	""
 
-n				=	"\r\n"
-os.system("mkdir -p db/ipv4")
-os.system("mkdir -p db/domains")
+#	Sanitize the query received
+def sanitizeQuery(qr):
+	qr = re.findall('[abcdef1234567890.:/]+',str(qr))
+	qr = ''.join(qr)
+	return qr
 
+# load data from csv
+def loadCSV(ipdb):
+    csvfile = DictReader(open('../ipdb.csv', 'r'))
+    for entry in csvfile:
+        ipdb[entry["network"]] = entry
+
+# loop through ipdb in search for a match,
+# if a match is found, it is checked against any further match,
+# which is better
+def checkipdb(ipdb,query):
+    response = ""
+    for key,value in ipdb.items():
+        try:
+            dbresult = ipaddress.ip_network(value["network"])
+        except Exception as e:
+            print(e)
+            break
+        if ( type(query) != type(dbresult) ):
+            continue 
+        if ( query == dbresult ):
+#            print("exact match.",dbresult)
+            return dbresult
+            break
+        if ( response == "" ):
+            if query.subnet_of(dbresult):
+#                print("first match",dbresult)
+                response = dbresult
+        else:
+            if query.subnet_of(dbresult):
+                if dbresult.subnet_of(response):
+#                    print("further match",dbresult)
+                    response = dbresult 
+    return response
+	 
+
+# define linebreak, empty ipdb, and load it
+n =  "\r\n"
+ipdb = {}
+loadCSV(ipdb)
+
+# accept socket as defined above 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
 	s.bind((LISTEN_ADDRESS, LISTEN_PORT))
 except:
 	print("Could not bind specified IP or Port. Already in use? Not privileged for this port?")
 	exit(2)
+
 s.listen(1)
 
-#	Sanitize the query received
-def sanitizeQuery(qr):
-	qr = qr.lower()
-	qr = qr.replace("..", ".")
-	qr = qr.replace("/", "")
-	qr = qr.replace("\\", "")
-	qr = qr.replace("\r", "")
-	qr = qr.replace("\n", "")
-	return qr
-
-# Check if the input is a valid IPv4 Address
-def isIP(qr):
-	bytez = qr.split(".")
-	if(len(bytez) != 4):
-		return False
-	for byt in bytez:
-		if(not byt.isdigit()):
-			return False
-	ipaddr = [int(bytez[0]), int(bytez[1]), int(bytez[2]), int(bytez[3])]
-	for num in ipaddr:
-		if(num < 0 or num > 255):
-			return False
-	return True
-
-# Check if the input is a valid domain name
-def isDomain(qr):
-	if(len(qr.split(".")) == 1):
-		return False
-	zones = qr.split(".")
-	ac = re.compile("^[a-z0-9\.-]+\n")
-	for zone in zones:
-		if(zone == ""):
-			return False
-		if(zone[0] == "-"):
-			return False
-		if(zone[-1] == "-"):
-			return False
-		if(ac.match(zone + "\n")):
-			pass
-		else:
-			return False
-	return True
-
-# Check if an IP belongs to a CIDR IP block
-def isIPinCIDR(ip, network):
-	return IPAddress(ip) in IPNetwork(network)
-
+# if we break out here, we do it in an error.
+# there should be a proper closing of the socket when receiving SIG...
 while True:
 	con, adr = s.accept()
-	log = "[" + strftime("%d/%m/%Y %H:%M:%S") + "] " + adr[0] + " - "
-	while True:
-		query = con.recv(MAX_QUERY_SIZE)
-		if not query:
-			break
-		log = log + query.replace("\r\n", "").replace("\n", "") + " - "
-		query = sanitizeQuery(query)	
-
-		rsp = 		"# +-----------------------------------+" + n
-		rsp = rsp + "# |             DaKnObNET             |" + n
-		rsp = rsp + "# +-----------------------------------+" + n
-		rsp = rsp + "# |  This query was served by mwhois  |" + n
-		rsp = rsp + "# +-----------------------------------+" + n
-		rsp = rsp + n
-
-		if(isIP(query)):
-			# WHOIS IPv4
-			log = log + "IPv4"
-			ipdb = os.listdir("db/ipv4/")
-			for ipe in ipdb:
-				ipe = ipe.replace("-", "/")
-				found = False
-				if(isIPinCIDR(query, ipe)):
-					dd = open("db/ipv4/" + ipe.replace("/", "-"), "r")
-					rsp = rsp + dd.read()
-					dd.close()
-					found = True
-					log = log + n
-					break
-			if(found == False):
-				rsp = rsp + n
-				rsp = rsp + "# IP Address was not found in the whois database" + n
-				log = log + " (Not found)" + n
-
-		elif(isDomain(query)):
-			# WHOIS Domain
-			log = log + "Domain" + n
-			
-			domaindb = os.listdir("db/domains/")
-			for domain in domaindb:
-				found = False
-				if(query == domain):
-					dd = open("db/domains/" + domain, "r")
-					rsp = rsp + dd.read()
-					dd.close()
-					found = True
-					log = log + n
-					break
-			if(found == False):
-				rsp = rsp + n
-				rsp = rsp + "# Domain name was not found in the whois database" + n
-				log = log + " (Not found)" + n
-		else:
-			# Unrecognized	
-			log = log + "Unrecognized" + n
-			rsp = rsp + n
-			rsp = rsp + "# Error. Unknown query type. Query is not IPv4 or Domain " + n
-		con.send(rsp)
-		con.close()
-		if(LOGFILE!=""):
-			# Save to logs
-			try:
-				d = open(LOGFILE, "a+")
-				d.write(log)
-				d.close()
-			except:
-				print("FAILED TO SAVE TO LOGFILE!")
+	print( "[" + strftime("%d/%m/%Y %H:%M:%S") + "] " + adr[0] + " - ", end = '')
+	query = con.recv(MAX_QUERY_SIZE)
+	if not query:
 		break
+	# we got so far, then we remove anything which isn't a symbol of an IP
+	query = sanitizeQuery(query.decode())
+	print(query)
+
+	# server header, got the idea from the project I got the idea from
+	rsp = ""	
+	rsp = rsp + "# +--------------------------------------+" + n
+	rsp = rsp + "# |  This query was served by m(s)whois  |" + n
+	rsp = rsp + "# +--------------------------------------+" + n
+
+	# now we start the interesting part, we try to assign the query
+	# if it isn't recognized as any kind of ip address, we won't work with it
+	try:
+		query = ipaddress.ip_network(query,strict=False)
+	except:
+		query = ""
+	# I'm not sure if it is a great idea in giving back the query, 
+	# but for now it is a great debug helper
+	rsp = rsp + "# + I got your query as " + str(type(query)) + " " +str(query) + n 
+	rsp = rsp + n
+
+	# now we reached the part of actually running through the DB for results
+	result = ""
+	result = checkipdb(ipdb,query)
+	if ( result == "" ):
+		rsp = rsp + "nothing found."
+	else:
+		# we do some special formatting for single addresses, or traditional inetXnums
+		if ( result.num_addresses > 1 ):
+			rsp = rsp + "resource:\t" + str(result[0]) + " - " + str(result[-1]) + n
+		else:
+			rsp = rsp + "resource:\t" + str(result) + n
+		# the keys are the column names from the CSV, they could be in any order
+		rsp = rsp + "usage:\t\t" + ipdb[str(result)]['usage'] + n
+		rsp = rsp + "description:\t" + ipdb[str(result)]['description'] + n
+		rsp = rsp + "customer_name:\t" + ipdb[str(result)]['customer_name'] + n
+#		rsp = rsp + "created:\t" + ipdb[str(result)]['createdat'] + n
+#		rsp = rsp + "created by:\t" + ipdb[str(result)]['createdby'] + n
+		rsp = rsp + "last-modified:\t" + ipdb[str(result)]['changedat'] + n
+		rsp = rsp + "changed by:\t" + ipdb[str(result)]['changedby'] + n
+		# print(ipdb[str(result)])
+
+	rsp = rsp + n
+	# I decided to encode some funny chars as UTF-8, so it fits modern terminals
+	con.sendall(rsp.encode('utf-8'))
+	con.close()
